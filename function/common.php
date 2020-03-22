@@ -291,6 +291,7 @@ function encode_str_replace($str)
 function gethiddenpass($path,$passfile)
 {
     $path1 = path_format($_SERVER['list_path'] . path_format($path));
+    if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1,0,-1);
     $password=getcache('path_' . $path1 . '/?password');
     if ($password=='') {
     $ispassfile = fetch_files(path_format($path . '/' . urlencode($passfile)));
@@ -456,7 +457,8 @@ function get_thumbnails_url($path = '/')
 {
     $path1 = path_format($path);
     $path = path_format($_SERVER['list_path'] . path_format($path));
-    $thumb_url = getcache($path);
+    if ($path!='/'&&substr($path,-1)=='/') $path=substr($path,0,-1);
+    $thumb_url = getcache('thumb_'.$path);
     if ($thumb_url!='') return output($thumb_url);
     $url = $_SERVER['api_url'];
     if ($path !== '/') {
@@ -466,7 +468,7 @@ function get_thumbnails_url($path = '/')
     $url .= ':/thumbnails/0/medium';
     $files = json_decode(curl_request($url, false, ['Authorization' => 'Bearer ' . $_SERVER['access_token']])['body'], true);
     if (isset($files['url'])) {
-        savecache($path, $files['url']);
+        savecache('thumb_'.$path, $files['url']);
         return output($files['url']);
     }
     return output('', 404);
@@ -595,6 +597,7 @@ function main($path)
                 error_log('del.tmp:GET,'.json_encode($_GET,JSON_PRETTY_PRINT));
                 $tmp = MSAPI('DELETE',path_format(path_format($_SERVER['list_path'] . path_format($path)) . '/' . spurlencode($_GET['filename']) ),'',$_SERVER['access_token']);
                 $path1 = path_format($_SERVER['list_path'] . path_format($path));
+                if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1,0,-1);
                 savecache('path_' . $path1, json_decode('{}',true), 1);
                 return output($tmp['body'],$tmp['stat']);
             }
@@ -615,6 +618,7 @@ function main($path)
                     $tmp['body'] = json_encode($tmpbody);
                 }
                 $path1 = path_format($_SERVER['list_path'] . path_format($path));
+                if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1,0,-1);
                 savecache('path_' . $path1, json_decode('{}',true), 1);
                 return output($tmp['body'],$tmp['stat']);
             }
@@ -624,6 +628,7 @@ function main($path)
             $tmp = adminoperate($path);
             if ($tmp['statusCode'] > 0) {
                 $path1 = path_format($_SERVER['list_path'] . path_format($path));
+                if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1,0,-1);
                 savecache('path_' . $path1, json_decode('{}',true), 1);
                 return $tmp;
             }
@@ -771,6 +776,7 @@ function adminoperate($path)
             //savecache('path_' . $path1, json_decode('{}',true), 1);
             if ($_GET['move_folder'] == '/../') $path2 = path_format( substr($path1, 0, strrpos($path1, '/')) . '/' );
             else $path2 = path_format( $path1 . '/' . $_GET['move_folder'] . '/' );
+            if ($path2!='/'&&substr($path2,-1)=='/') $path2=substr($path2,0,-1);
             savecache('path_' . $path2, json_decode('{}',true), 1);
             return output($result['body'], $result['stat']);
         } else {
@@ -842,6 +848,7 @@ function adminoperate($path)
     }
     if (isset($_GET['RefreshCache'])) {
         $path1 = path_format($_SERVER['list_path'] . path_format($path));
+        if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1,0,-1);
         savecache('path_' . $path1 . '/?password', '', 1);
         return message('<meta http-equiv="refresh" content="2;URL=./">', getconstStr('RefreshCache'), 302);
     }
@@ -859,7 +866,7 @@ function splitlast($str, $split)
         $tmp[1] = substr($str, $pos+1);
     } else {
         $tmp[0] = '';
-        $tmp[1] = $str;
+        $tmp[1] = substr($str, 1);
     }
     return $tmp;
 }
@@ -937,27 +944,28 @@ function fetch_files($path = '/')
     global $exts;
     $path1 = path_format($path);
     $path = path_format($_SERVER['list_path'] . path_format($path));
+    if ($path!='/'&&substr($path,-1)=='/') $path=substr($path,0,-1);
     if (!($files = getcache('path_' . $path))) {
         // https://docs.microsoft.com/en-us/graph/api/driveitem-get?view=graph-rest-1.0
         // https://docs.microsoft.com/zh-cn/graph/api/driveitem-put-content?view=graph-rest-1.0&tabs=http
         // https://developer.microsoft.com/zh-cn/graph/graph-explorer
-        $pos = strrpos($path, '/');
-        if ($pos>1) {
-            $parentpath = substr($path, 0, $pos);
-            $filename = strtolower(substr($path, $pos+1));
-            if ($parentfiles = getcache('path_' . $parentpath. '/')) {
-                if (isset($parentfiles['children'][$filename]['@microsoft.graph.downloadUrl'])) {
-                    if (in_array(splitlast($filename,'.')[1], $exts['txt'])) {
-                        if (!(isset($parentfiles['children'][$filename]['content'])&&$parentfiles['children'][$filename]['content']['stat']==200)) {
-                            $content1 = curl_request($parentfiles['children'][$filename]['@microsoft.graph.downloadUrl']);
-                            $parentfiles['children'][$filename]['content'] = $content1;
-                            savecache('path_' . $parentpath. '/', $parentfiles);
-                        }
+        $pos = splitlast($path, '/');
+        $parentpath = $pos[0];
+        if ($parentpath=='') $parentpath = '/';
+        $filename = $pos[1];
+        if ($parentfiles = getcache('path_' . $parentpath)) {
+            if (isset($parentfiles['children'][$filename]['@microsoft.graph.downloadUrl'])) {
+                if (in_array(splitlast($filename,'.')[1], $exts['txt'])) {
+                    if (!(isset($parentfiles['children'][$filename]['content'])&&$parentfiles['children'][$filename]['content']['stat']==200)) {
+                        $content1 = curl_request($parentfiles['children'][$filename]['@microsoft.graph.downloadUrl']);
+                        $parentfiles['children'][$filename]['content'] = $content1;
+                        savecache('path_' . $parentpath, $parentfiles);
                     }
-                    return $parentfiles['children'][$filename];
                 }
+                return $parentfiles['children'][$filename];
             }
         }
+
         $url = $_SERVER['api_url'];
         if ($path !== '/') {
             $url .= ':' . $path;
@@ -1021,6 +1029,7 @@ function fetch_files_children($files, $path, $page)
 {
     $path1 = path_format($path);
     $path = path_format($_SERVER['list_path'] . path_format($path));
+    if ($path!='/'&&substr($path,-1)=='/') $path=substr($path,0,-1);
     $cachefilename = '.SCFcache_'.$_SERVER['function_name'];
     $maxpage = ceil($files['folder']['childCount']/200);
     if (!($files['children'] = getcache('files_' . $path . '_page_' . $page))) {
@@ -1262,8 +1271,8 @@ function get_refresh_token()
         '.getconstStr('OnedriveDiskTag').': ('.getConfig('disktag').')<input type="text" name="disktag_add" placeholder="' . getconstStr('EnvironmentsDescription')['disktag'] . '" style="width:100%"><br>
         '.getconstStr('OnedriveDiskName').':<input type="text" name="diskname" placeholder="' . getconstStr('EnvironmentsDescription')['diskname'] . '" style="width:100%"><br>
         Onedrive_Ver：<br>
-        <label><input type="radio" name="Onedrive_ver" value="MS" checked>MS: '.getconstStr('OndriveVerMS').'</label><br>
-        <label><input type="radio" name="Onedrive_ver" value="CN">CN: '.getconstStr('OndriveVerCN').'</label><br>
+        <label><input type="radio" name="Onedrive_ver" value="MS" checked onclick="document.getElementById(\'secret\').style.display=\'none\';">MS: '.getconstStr('OndriveVerMS').'</label><br>
+        <label><input type="radio" name="Onedrive_ver" value="CN" onclick="document.getElementById(\'secret\').style.display=\'none\';">CN: '.getconstStr('OndriveVerCN').'</label><br>
         <label><input type="radio" name="Onedrive_ver" value="MSC" onclick="document.getElementById(\'secret\').style.display=\'\';">MSC: '.getconstStr('OndriveVerMSC').'
             <div id="secret" style="display:none">
                 <a href="'.$app_url.'" target="_blank">'.getconstStr('GetSecretIDandKEY').'</a><br>
