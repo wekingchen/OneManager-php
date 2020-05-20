@@ -2137,7 +2137,9 @@ function render_list($path = '', $files = '')
                 $html = str_replace('<!--Is'.$ext.'FileStart-->', '', $html);
                 $html = str_replace('<!--Is'.$ext.'FileEnd-->', '', $html);
             }
-            while (strpos($html, '<!--FileDownUrl-->')) $html = str_replace('<!--FileDownUrl-->', $files[$_SERVER['DownurlStrName']], $html);
+            //while (strpos($html, '<!--FileDownUrl-->')) $html = str_replace('<!--FileDownUrl-->', $files[$_SERVER['DownurlStrName']], $html);
+            while (strpos($html, '<!--FileDownUrl-->')) $html = str_replace('<!--FileDownUrl-->', path_format($_SERVER['base_disk_path'] . '/' . $path), $html);
+            while (strpos($html, '<!--FileEncodeReplaceUrl-->')) $html = str_replace('<!--FileEncodeReplaceUrl-->', path_format($_SERVER['base_disk_path'] . '/' . $path), $html);
             while (strpos($html, '<!--FileName-->')) $html = str_replace('<!--FileName-->', $files['name'], $html);
             $html = str_replace('<!--FileEncodeDownUrl-->', urlencode($files[$_SERVER['DownurlStrName']]), $html);
             $html = str_replace('<!--constStr@ClicktoEdit-->', getconstStr('ClicktoEdit'), $html);
@@ -2162,13 +2164,17 @@ function render_list($path = '', $files = '')
         $html = str_replace('<!--Title-->', $title, $html);
 
         $keywords = $n_path;
-        if ($p_path!='') $keywords .= ',' . $p_path;
-        $keywords .= ',' . $_SERVER['sitename'] . ',OneManager';
+        if ($p_path!='') $keywords .= ', ' . $p_path;
+        if ($_SERVER['sitename']!='OneManager') $keywords .= ', ' . $_SERVER['sitename'] . ', OneManager';
+        else $keywords .= ', OneManager';
         $html = str_replace('<!--Keywords-->', $keywords, $html);
 
-        if ($_GET['preview']) $description = 'Preview of '.$n_path.'. ';
-        elseif (isset($files['folder'])) $description = 'List of '.$n_path.'. ';
-        $description .= 'In '.$_SERVER['sitename'];
+        if ($_GET['preview']) {
+            $description = $n_path.', '.getconstStr('Preview');//'Preview of '.
+        } elseif (isset($files['folder'])) {
+            $description = $n_path.', '.getconstStr('List');//'List of '.$n_path.'. ';
+        }
+        //$description .= 'In '.$_SERVER['sitename'];
         $html = str_replace('<!--Description-->', $description, $html);
 
         while (strpos($html, '<!--base_disk_path-->')) $html = str_replace('<!--base_disk_path-->', $_SERVER['base_disk_path'], $html);
@@ -2205,6 +2211,7 @@ function render_list($path = '', $files = '')
         while (strpos($html, '<!--constStr@GetFileNameFail-->')) $html = str_replace('<!--constStr@GetFileNameFail-->', getconstStr('GetFileNameFail'), $html);
         while (strpos($html, '<!--constStr@UploadFile-->')) $html = str_replace('<!--constStr@UploadFile-->', getconstStr('UploadFile'), $html);
         while (strpos($html, '<!--constStr@UploadFolder-->')) $html = str_replace('<!--constStr@UploadFolder-->', getconstStr('UploadFolder'), $html);
+        while (strpos($html, '<!--constStr@FileSelected-->')) $html = str_replace('<!--constStr@FileSelected-->', getconstStr('FileSelected'), $html);
         while (strpos($html, '<!--IsPreview?-->')) $html = str_replace('<!--IsPreview?-->', (isset($_GET['preview'])?'?preview&':'?'), $html);
 
         $tmp = splitfirst($html, '<!--BackgroundStart-->');
@@ -2258,7 +2265,7 @@ function render_list($path = '', $files = '')
             $html = $tmp[0];
             $tmp = splitfirst($tmp[1], '<!--ShowThumbnailsEnd-->');
             if (!(isset($_SERVER['USER'])&&$_SERVER['USER']=='qcloud')) {
-                $html .= $tmp[0] . $tmp[1];
+                $html .= str_replace('<!--constStr@OriginalPic-->', getconstStr('OriginalPic'), $tmp[0]) . $tmp[1];
             } else $html .= $tmp[1];
         }
         $imgextstr = '';
@@ -2290,6 +2297,10 @@ function render_list($path = '', $files = '')
             $tmp[1] = $tmp1;
         }
         $html .= $MultiDiskArea . $tmp[1];
+        $diskname = getConfig('diskname');
+        if ($diskname=='') $diskname = $_SERVER['disktag'];
+        if (strlen($diskname)>10) $diskname = substr($diskname, 0, 7).'...';
+        while (strpos($html, '<!--DiskNameNow-->')) $html = str_replace('<!--DiskNameNow-->', $diskname, $html);
         
         $tmp = splitfirst($html, '<!--HeadomfStart-->');
         $html = $tmp[0];
