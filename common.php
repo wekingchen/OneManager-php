@@ -6,6 +6,7 @@ global $ShowedCommonEnv;
 global $InnerEnv;
 global $ShowedInnerEnv;
 global $Base64Env;
+global $timezones;
 
 $Base64Env = [
     //'APIKey', // used in heroku.
@@ -19,6 +20,7 @@ $Base64Env = [
     //'admin',
     //'adminloginpage',
     'background',
+    'backgroundm',
     'diskname',
     //'disableShowThumb',
     //'disableChangeTheme',
@@ -63,6 +65,7 @@ $CommonEnv = [
     'admin',
     'adminloginpage',
     'background',
+    'backgroundm',
     'disktag',
     'disableShowThumb',
     'disableChangeTheme',
@@ -89,6 +92,7 @@ $ShowedCommonEnv = [
     //'admin',
     'adminloginpage',
     'background',
+    'backgroundm',
     //'disktag',
     'disableShowThumb',
     'disableChangeTheme',
@@ -689,6 +693,42 @@ function is_guestup_path($path)
 function array_value_isnot_null($arr)
 {
     return $arr!=='';
+}
+
+function curl($method, $url, $data = '', $headers = [], $returnheader = 0)
+{
+    //if (!isset($headers['Accept'])) $headers['Accept'] = '*/*';
+    //if (!isset($headers['Referer'])) $headers['Referer'] = $url;
+    //if (!isset($headers['Content-Type'])) $headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    $sendHeaders = array();
+    foreach ($headers as $headerName => $headerVal) {
+        $sendHeaders[] = $headerName . ': ' . $headerVal;
+    }
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST,$method);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_HEADER, $returnheader);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $sendHeaders);
+    //$response['body'] = curl_exec($ch);
+    if ($returnheader) {
+        list($returnhead, $response['body']) = explode("\r\n\r\n", curl_exec($ch));
+        foreach (explode("\r\n", $returnhead) as $head) {
+            $tmp = explode(': ', $head);
+            $heads[$tmp[0]] = $tmp[1];
+        }
+        $response['returnhead'] = $heads;
+    } else {
+        $response['body'] = curl_exec($ch);
+    }
+    $response['stat'] = curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    return $response;
 }
 
 function curl_request($url, $data = false, $headers = [], $returnheader = 0)
@@ -1794,6 +1834,8 @@ function EnvOpt($needUpdate = 0)
         $canOneKeyUpate = 1;
     } elseif (isset($_SERVER['FC_SERVER_PATH'])&&$_SERVER['FC_SERVER_PATH']==='/var/fc/runtime/php7.2') {
         $canOneKeyUpate = 1;
+    } elseif ($_SERVER['BCE_CFC_RUNTIME_NAME']=='php7') {
+        $canOneKeyUpate = 1;
     } elseif ($_SERVER['_APP_SHARE_DIR']==='/var/share/CFF/processrouter') {
         $canOneKeyUpate = 1;
     } else {
@@ -2438,9 +2480,17 @@ function render_list($path = '', $files = '')
         $html = $tmp[0];
         $tmp = splitfirst($tmp[1], '<!--BackgroundEnd-->');
         if (getConfig('background')) {
-            $background = str_replace('<!--BackgroundUrl-->', getConfig('background'), $tmp[0]);
+            $html .= str_replace('<!--BackgroundUrl-->', getConfig('background'), $tmp[0]);
         }
-        $html .= $background . $tmp[1];
+        $html .= $tmp[1];
+
+        $tmp = splitfirst($html, '<!--BackgroundMStart-->');
+        $html = $tmp[0];
+        $tmp = splitfirst($tmp[1], '<!--BackgroundMEnd-->');
+        if (getConfig('backgroundm')) {
+            $html .= str_replace('<!--BackgroundMUrl-->', getConfig('backgroundm'), $tmp[0]);
+        }
+        $html .=  $tmp[1];
 
         $tmp = splitfirst($html, '<!--PathArrayStart-->');
         $html = $tmp[0];
