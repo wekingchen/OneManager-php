@@ -19,6 +19,7 @@ $Base64Env = [
     //'HW_secret', // used in FG.
     //'admin',
     //'adminloginpage',
+    //'autoJumpFirstDisk',
     'background',
     'backgroundm',
     'diskname',
@@ -64,6 +65,7 @@ $CommonEnv = [
     'HW_secret', // used in FG.
     'admin',
     'adminloginpage',
+    'autoJumpFirstDisk',
     'background',
     'backgroundm',
     'disktag',
@@ -91,6 +93,7 @@ $ShowedCommonEnv = [
     //'HW_secret', // used in FG.
     //'admin',
     'adminloginpage',
+    'autoJumpFirstDisk',
     'background',
     'backgroundm',
     //'disktag',
@@ -255,16 +258,17 @@ function main($path)
 //    echo 'count$disk:'.count($disktags);
     if (count($disktags)>1) {
         if ($path=='/'||$path=='') {
+            $files['folder']['childCount'] = count($disktags);
+            foreach ($disktags as $disktag) {
+                $files['children'][$disktag]['folder'] = 1;
+                $files['children'][$disktag]['name'] = $disktag;
+            }
             if ($_GET['json']) {
                 // return a json
-                $files['folder']['childCount'] = count($disktags);
-                foreach ($disktags as $disktag) {
-                    $files['children'][$disktag]['folder'] = 1;
-                    $files['children'][$disktag]['name'] = $disktag;
-                }
                 return files_json($files);
-            } // else return render_list($path, $files);
-            return output('', 302, [ 'Location' => path_format($_SERVER['base_path'].'/'.$disktags[0].'/') ]);
+            }
+            if (getConfig('autoJumpFirstDisk')) return output('', 302, [ 'Location' => path_format($_SERVER['base_path'].'/'.$disktags[0].'/') ]);
+            return render_list($path, $files);
         }
         $_SERVER['disktag'] = splitfirst( substr(path_format($path), 1), '/' )[0];
         //$pos = strpos($path, '/');
@@ -540,14 +544,28 @@ function isHideFile($name)
 
 function getcache($str)
 {
-    $cache = new \Doctrine\Common\Cache\FilesystemCache(sys_get_temp_dir(), __DIR__.'/Onedrive/'.$_SERVER['disktag']);
+    $cache = filecache();
     return $cache->fetch($str);
 }
 
 function savecache($key, $value, $exp = 1800)
 {
-    $cache = new \Doctrine\Common\Cache\FilesystemCache(sys_get_temp_dir(), __DIR__.'/Onedrive/'.$_SERVER['disktag']);
-    $cache->save($key, $value, $exp);
+    $cache = filecache();
+    return $cache->save($key, $value, $exp);
+}
+
+function filecache()
+{
+    $dir = sys_get_temp_dir();
+    if (!is_writable($dir)) {
+        if ( is_writable(__DIR__ . '/tmp/') ) $dir = __DIR__ . '/tmp/';
+        if ( mkdir(__DIR__ . '/tmp/', 0777) ) $dir = __DIR__ . '/tmp/';
+    }
+    $tag = __DIR__ . '/OneManager/' . $_SERVER['disktag'];
+    while (strpos($tag, '/')>-1) $tag = str_replace('/', '_', $tag);
+    // error_log('DIR:' . $dir . ' TAG: ' . $tag);
+    $cache = new \Doctrine\Common\Cache\FilesystemCache($dir, $tag);
+    return $cache;
 }
 
 function getconstStr($str)
