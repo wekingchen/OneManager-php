@@ -58,7 +58,8 @@ function getConfig($str, $disktag = '')
     global $Base64Env;
     //include 'config.php';
     $s = file_get_contents('config.php');
-    $configs = substr($s, 18, -2);
+    //$configs = substr($s, 18, -2);
+    $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') {
         $envs = json_decode($configs, true);
         if (in_array($str, $InnerEnv)) {
@@ -84,7 +85,8 @@ function setConfig($arr, $disktag = '')
     if ($disktag=='') $disktag = $_SERVER['disktag'];
     //include 'config.php';
     $s = file_get_contents('config.php');
-    $configs = substr($s, 18, -2);
+    //$configs = substr($s, 18, -2);
+    $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') $envs = json_decode($configs, true);
     $disktags = explode("|",getConfig('disktag'));
     $indisk = 0;
@@ -137,7 +139,12 @@ function install()
     global $constStr;
     if ($_GET['install2']) {
         $tmp['admin'] = $_POST['admin'];
-        setConfig($tmp);
+        $response = setConfigResponse( setConfig($tmp) );
+        if (api_error($response)) {
+            $html = api_error_msg($response);
+            $title = 'Error';
+            return message($html, $title, 201);
+        }
         if (needUpdate()) {
             OnekeyUpate();
             return message('update to github version, reinstall.
@@ -365,10 +372,8 @@ function updateEnvironment($Envs, $function_name, $Region, $Namespace, $SecretId
     copyFolder($coderoot, $outPath);
     
     // 将配置写入
-    $prestr = '<?php $configs = \'
-';
-    $aftstr = '
-\';';
+    $prestr = '<?php $configs = \'' . PHP_EOL;
+    $aftstr = PHP_EOL . '\';';
     file_put_contents($outPath . 'config.php', $prestr . json_encode($Envs, JSON_PRETTY_PRINT) . $aftstr);
 
     // 将目录中文件打包成zip
@@ -420,7 +425,7 @@ function SetbaseConfig($Envs, $function_name, $Region, $Namespace, $SecretId, $S
     $tmpdata['Timestamp'] = time();
     $tmpdata['Token'] = '';
     $tmpdata['Version'] = '2018-04-16';
-    $tmpdata['Description'] = 'Onedrive index and manager in SCF.';
+    $tmpdata['Description'] = 'Onedrive index and manager in Tencent SCF.';
     $tmpdata['MemorySize'] = 64;
     $tmpdata['Timeout'] = 30;
     $data = ReorganizeDate($tmpdata);
@@ -439,7 +444,8 @@ function SetbaseConfig($Envs, $function_name, $Region, $Namespace, $SecretId, $S
     WaitSCFStat($function_name, $Region, $Namespace, $SecretId, $SecretKey);
 
     $s = file_get_contents('config.php');
-    $configs = substr($s, 18, -2);
+    //$configs = substr($s, 18, -2);
+    $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') $envs = json_decode($configs, true);
     foreach ($Envs as $k => $v) {
         $envs[$k] = $v;

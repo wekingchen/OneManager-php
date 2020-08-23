@@ -9,7 +9,8 @@ function getpath()
     if ($p>0) $path = substr($_SERVER['REQUEST_URI'], 0, $p);
     else $path = $_SERVER['REQUEST_URI'];
     $path = path_format( substr($path, strlen($_SERVER['base_path'])) );
-    return substr($path, 1);
+    return $path;
+    //return substr($path, 1);
     //return spurlencode($path, '/');
 }
 
@@ -44,7 +45,8 @@ function getConfig($str, $disktag = '')
     global $Base64Env;
     //include 'config.php';
     $s = file_get_contents('config.php');
-    $configs = substr($s, 18, -2);
+    //$configs = substr($s, 18, -2);
+    $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') {
         $envs = json_decode($configs, true);
         if (in_array($str, $InnerEnv)) {
@@ -70,7 +72,8 @@ function setConfig($arr, $disktag = '')
     if ($disktag=='') $disktag = $_SERVER['disktag'];
     //include 'config.php';
     $s = file_get_contents('config.php');
-    $configs = substr($s, 18, -2);
+    //$configs = substr($s, 18, -2);
+    $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') $envs = json_decode($configs, true);
     $disktags = explode("|",getConfig('disktag'));
     $indisk = 0;
@@ -107,11 +110,11 @@ function setConfig($arr, $disktag = '')
     $envs = array_filter($envs, 'array_value_isnot_null');
     ksort($envs);
     //echo '<pre>'. json_encode($envs, JSON_PRETTY_PRINT).'</pre>';
-    $prestr = '<?php $configs = \'
-';
-    $aftstr = '
-\';';
-    return file_put_contents('config.php', $prestr . json_encode($envs, JSON_PRETTY_PRINT) . $aftstr);
+    $prestr = '<?php $configs = \'' . PHP_EOL;
+    $aftstr = PHP_EOL . '\';';
+    $response = file_put_contents('config.php', $prestr . json_encode($envs, JSON_PRETTY_PRINT) . $aftstr);
+    if ($response>0) return json_encode( [ 'response' => 'success' ] );
+    return json_encode( [ 'message' => 'Failed to write config.', 'code' => 'failed' ] );
 }
 
 function install()
@@ -122,7 +125,7 @@ function install()
             $tmp['admin'] = $_POST['admin'];
             //$tmp['language'] = $_COOKIE['language'];
             $tmp['timezone'] = $_COOKIE['timezone'];
-            $response = setConfig($tmp);
+            $response = setConfigResponse( setConfig($tmp) );
             if (api_error($response)) {
                 $html = api_error_msg($response);
                 $title = 'Error';
@@ -191,7 +194,7 @@ function install()
                     document.getElementById("submitbtn").disabled = false;
                     document.getElementById("formdiv").style.display = "";
                 } else {
-                    alert(url+"\n"+xhr4.status);
+                    alert("Url: " + url + "\nExpect http code 201, but received " + xhr4.status);
                 }
             }
         }
@@ -252,19 +255,19 @@ function RewriteEngineOn()
 
 function api_error($response)
 {
-    return !$response;
+    return isset($response['message']);
 }
 
 function api_error_msg($response)
 {
-    return $response . '<br>
-Can not write config to file.<br>
+    return $response['code'] . '<br>
+' . $response['message'] . '<br>
 <button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>';
 }
 
 function setConfigResponse($response)
 {
-    return $response;
+    return json_decode($response, true);
 }
 
 function OnekeyUpate($auth = 'qkqpttgf', $project = 'OneManager-php', $branch = 'master')
@@ -317,15 +320,21 @@ function moveFolder($from, $to)
             $fromfile = $from.'/'.$filename;
             $tofile = $to.'/'.$filename;
             if(is_dir($fromfile)){// 如果读取的某个对象是文件夹，则递归
-                moveFolder($fromfile, $tofile);
+                $response = moveFolder($fromfile, $tofile);
+                if (api_error(setConfigResponse($response))) return $response;
             }else{
                 //if (file_exists($tofile)) unlink($tofile);
-                rename($fromfile, $tofile);
+                $response = rename($fromfile, $tofile);
+                if (!$response) {
+                    $tmp['code'] = "Move Failed";
+                    $tmp['message'] = "Can not move " . $fromfile . " to " . $tofile;
+                    return json_encode($tmp);
+                }
                 if (file_exists($fromfile)) unlink($fromfile);
             }
         }
     }
     closedir($handler);
     rmdir($from);
-    return 1;
+    return json_encode( [ 'response' => 'success' ] );
 }

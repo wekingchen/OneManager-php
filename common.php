@@ -229,14 +229,14 @@ function main($path)
         }
         if (getConfig('admin')!='') {
             if ($_POST['password1']==getConfig('admin')) {
-                return adminform('admin',md5($_POST['password1']),$url);
+                return adminform('admin', pass2cookie('admin', $_POST['password1']), $url);
             } else return adminform();
         } else {
             return output('', 302, [ 'Location' => $url ]);
         }
     }
     if (getConfig('admin')!='')
-        if ( isset($_COOKIE['admin'])&&$_COOKIE['admin']==md5(getConfig('admin')) ) {
+        if ( isset($_COOKIE['admin'])&&$_COOKIE['admin']==pass2cookie('admin', getConfig('admin')) ) {
             $_SERVER['admin']=1;
             $_SERVER['needUpdate'] = needUpdate();
         } else {
@@ -250,6 +250,7 @@ function main($path)
             $url = path_format($_SERVER['PHP_SELF'] . '/');
             return output('<script>alert(\''.getconstStr('SetSecretsFirst').'\');</script>', 302, [ 'Location' => $url ]);
         }
+    if ($_SERVER['admin']) if (isset($_GET['AddDisk'])||isset($_GET['authorization_code'])) return get_refresh_token();
 
     $_SERVER['sitename'] = getConfig('sitename');
     if (empty($_SERVER['sitename'])) $_SERVER['sitename'] = getconstStr('defaultSitename');
@@ -262,6 +263,7 @@ function main($path)
             foreach ($disktags as $disktag) {
                 $files['children'][$disktag]['folder'] = 1;
                 $files['children'][$disktag]['name'] = $disktag;
+                $files['children'][$disktag]['showname'] = getConfig('diskname', $disktag);
             }
             if ($_GET['json']) {
                 // return a json
@@ -290,7 +292,6 @@ function main($path)
     if (isset($_SERVER['HTTP_X_REQUESTED_WITH'])) if ($_SERVER['HTTP_X_REQUESTED_WITH']=='XMLHttpRequest') $_SERVER['ajax']=1;
 
     config_oauth();
-    if ($_SERVER['admin']) if (isset($_GET['AddDisk'])||isset($_GET['authorization_code'])) return get_refresh_token();
     $refresh_token = getConfig('refresh_token');
     //if (!$refresh_token) return get_refresh_token();
     if (!$refresh_token) {
@@ -396,7 +397,11 @@ function main($path)
                     $url = proxy_replace_domain($url, $domainforproxy);
                 }
                 if ( strtolower(splitlast($files['name'],'.')[1])=='html' ) return output($files['content']['body'], $files['content']['stat']);
-                else return output('', 302, [ 'Location' => $url ]);
+                else {
+                    if ($_SERVER['HTTP_RANGE']!='') $header['Range'] = $_SERVER['HTTP_RANGE'];
+                    $header['Location'] = $url;
+                    return output('', 302, $header);
+                }
             }
         }
         if ( isset($files['folder']) || isset($files['file']) ) {
@@ -410,6 +415,11 @@ function main($path)
             return message('<a href="'.$_SERVER['base_path'].'">'.getconstStr('Back').getconstStr('Home').'</a><div style="margin:8px;"><pre>' . $files['error']['message'] . '</pre></div><a href="javascript:history.back(-1)">'.getconstStr('Back').'</a>', $files['error']['code'], $files['error']['stat']);
         }
     }
+}
+
+function pass2cookie($name, $pass)
+{
+    return md5($name . ':' . md5($pass));
 }
 
 function proxy_replace_domain($url, $domainforproxy)
@@ -563,6 +573,10 @@ function filecache()
     }
     $tag = __DIR__ . '/OneManager/' . $_SERVER['disktag'];
     while (strpos($tag, '/')>-1) $tag = str_replace('/', '_', $tag);
+    if (strpos($tag, ':')>-1) {
+        while (strpos($tag, ':')>-1) $tag = str_replace(':', '_', $tag);
+        while (strpos($tag, '\\')>-1) $tag = str_replace('\\', '_', $tag);
+    }
     // error_log('DIR:' . $dir . ' TAG: ' . $tag);
     $cache = new \Doctrine\Common\Cache\FilesystemCache($dir, $tag);
     return $cache;
@@ -946,9 +960,9 @@ function size_format($byte)
 
 function time_format($ISO)
 {
+    if ($ISO=='') return date('Y-m-d H:i:s');
     $ISO = str_replace('T', ' ', $ISO);
     $ISO = str_replace('Z', ' ', $ISO);
-    //return $ISO;
     return date('Y-m-d H:i:s',strtotime($ISO . " UTC"));
 }
 
@@ -1497,6 +1511,7 @@ function get_refresh_token()
 {
     global $constStr;
     global $CommonEnv;
+    config_oauth();
     $envs = '';
     foreach ($CommonEnv as $env) $envs .= '\'' . $env . '\', ';
     $url = path_format($_SERVER['PHP_SELF'] . '/');
@@ -2318,7 +2333,7 @@ function render_list($path = '', $files = '')
                     if ($_SERVER['admin'] or !isHideFile($file['name'])) {
                         $filenum++;
                         $FolderListStr = str_replace('<!--FileEncodeReplaceUrl-->', path_format($_SERVER['base_disk_path'] . '/' . $path . '/' . encode_str_replace($file['name'])), $FolderList);
-                        $FolderListStr = str_replace('<!--FileEncodeReplaceName-->', str_replace('&','&amp;', $file['name']), $FolderListStr);
+                        $FolderListStr = str_replace('<!--FileEncodeReplaceName-->', str_replace('&','&amp;', $file['showname']?$file['showname']:$file['name']), $FolderListStr);
                         $FolderListStr = str_replace('<!--lastModifiedDateTime-->', time_format($file['lastModifiedDateTime']), $FolderListStr);
                         $FolderListStr = str_replace('<!--size-->', size_format($file['size']), $FolderListStr);
                         while (strpos($FolderListStr, '<!--filenum-->')) $FolderListStr = str_replace('<!--filenum-->', $filenum, $FolderListStr);
