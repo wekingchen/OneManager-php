@@ -568,8 +568,10 @@ function filecache()
 {
     $dir = sys_get_temp_dir();
     if (!is_writable($dir)) {
-        if ( is_writable(__DIR__ . '/tmp/') ) $dir = __DIR__ . '/tmp/';
-        if ( mkdir(__DIR__ . '/tmp/', 0777) ) $dir = __DIR__ . '/tmp/';
+        $tmp = __DIR__ . '/tmp/';
+        if (file_exists($tmp)) {
+            if ( is_writable($tmp) ) $dir = $tmp;
+        } elseif ( mkdir($tmp) ) $dir = $tmp;
     }
     $tag = __DIR__ . '/OneManager/' . $_SERVER['disktag'];
     while (strpos($tag, '/')>-1) $tag = str_replace('/', '_', $tag);
@@ -613,10 +615,10 @@ function config_oauth()
     if (getConfig('Drive_ver')=='CN') {
         // CN 21Vianet
         // https://portal.azure.cn
-        $_SERVER['client_id'] = '04c3ca0b-8d07-4773-85ad-98b037d25631';
-        $_SERVER['client_secret'] = 'h8@B7kFVOmj0+8HKBWeNTgl@pU/z4yLB';
-        //$_SERVER['client_id'] = 'b15f63f5-8b72-48b5-af69-8cab7579bff7';
-        //$_SERVER['client_secret'] = '0IIuZ1Kcq_YI3NrkZFwsniEo~BoP~8_M22';
+        //$_SERVER['client_id'] = '04c3ca0b-8d07-4773-85ad-98b037d25631';
+        //$_SERVER['client_secret'] = 'h8@B7kFVOmj0+8HKBWeNTgl@pU/z4yLB'; // expire 20200902
+        $_SERVER['client_id'] = 'b15f63f5-8b72-48b5-af69-8cab7579bff7';
+        $_SERVER['client_secret'] = '0IIuZ1Kcq_YI3NrkZFwsniEo~BoP~8_M22';
         $_SERVER['oauth_url'] = 'https://login.partner.microsoftonline.cn/common/oauth2/v2.0/';
         $_SERVER['api_url'] = 'https://microsoftgraph.chinacloudapi.cn/v1.0/me/drive/root';
         $_SERVER['scope'] = 'https://microsoftgraph.chinacloudapi.cn/Files.ReadWrite.All offline_access';
@@ -900,10 +902,11 @@ function message($message, $title = 'Message', $statusCode = 200)
 
 function needUpdate()
 {
-    $current_ver = file_get_contents(__DIR__ . '/version');
-    $current_ver = substr($current_ver, strpos($current_ver, '.')+1);
+    $current_version = file_get_contents(__DIR__ . '/version');
+    $current_ver = substr($current_version, strpos($current_version, '.')+1);
     $current_ver = explode(urldecode('%0A'),$current_ver)[0];
     $current_ver = explode(urldecode('%0D'),$current_ver)[0];
+    $split = splitfirst($current_version, '.' . $current_ver)[0] . '.' . $current_ver;
     //$github_version = file_get_contents('https://raw.githubusercontent.com/qkqpttgf/OneManager-php/master/version');
     $tmp = curl_request('https://raw.githubusercontent.com/qkqpttgf/OneManager-php/master/version');
     if ($tmp['stat']==0) return 0;
@@ -912,7 +915,9 @@ function needUpdate()
     $github_ver = explode(urldecode('%0A'),$github_ver)[0];
     $github_ver = explode(urldecode('%0D'),$github_ver)[0];
     if ($current_ver != $github_ver) {
-        $_SERVER['github_version'] = $github_version;
+        //$_SERVER['github_version'] = $github_version;
+        $_SERVER['github_ver_new'] = splitfirst($github_version, $split)[0];
+        $_SERVER['github_ver_old'] = splitfirst($github_version, $_SERVER['github_ver_new'])[1];
         return 1;
     }
     return 0;
@@ -1922,8 +1927,12 @@ function EnvOpt($needUpdate = 0)
 ';
     }
     if ($needUpdate) {
-        $html .= '<div style="position:relative;word-wrap: break-word;">
-        ' . str_replace("\r", '<br>',$_SERVER['github_version']) . '
+        $html .= '<div style="position: relative; word-wrap: break-word;">
+        ' . str_replace("\r", '<br>', $_SERVER['github_ver_new']) . '
+</div>
+<button onclick="document.getElementById(\'github_ver_old\').style.display=(document.getElementById(\'github_ver_old\').style.display==\'none\'?\'\':\'none\');">More...</button>
+<div id="github_ver_old" style="position: relative; word-wrap: break-word; display: none">
+        ' . str_replace("\r", '<br>', $_SERVER['github_ver_old']) . '
 </div>';
     }/* else {
         $html .= getconstStr('NotNeedUpdate');
