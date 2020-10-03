@@ -13,4 +13,14 @@ RewriteRule ^(.*) index.php?/$1 [L]
 # rewrite {
 #     to index.php?/$1
 # }
+#
+### caddy2 Caddyfile
+# @try_files {
+#     not path /.well-known/*
+#     file {
+#         try_files index.php
+#     }
+# }
+# rewrite @try_files {http.matchers.file.relative}
+#
 ###-----------------------------------
