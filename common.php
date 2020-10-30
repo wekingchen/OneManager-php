@@ -652,7 +652,7 @@ function get_siteid($access_token)
     $sharepointSiteAddress = getConfig('sharepointSiteAddress');
     while (substr($sharepointSiteAddress, -1)=='/') $sharepointSiteAddress = substr($sharepointSiteAddress, 0, -1);
     $tmp = splitlast($sharepointSiteAddress, '/');
-    $sharepointname = $tmp[1];
+    $sharepointname = urlencode($tmp[1]);
     $tmp = splitlast($tmp[0], '/');
     $sharepointname = $tmp[1] . '/' . $sharepointname;
     if (getConfig('Drive_ver')=='MS') $url = 'https://graph.microsoft.com/v1.0/sites/root:/'.$sharepointname;
@@ -1143,7 +1143,7 @@ function adminoperate($path)
         if (getConfig('passfile')=='') return message(getconstStr('SetpassfileBfEncrypt'),'',403);
         if ($_GET['encrypt_folder']=='/') $_GET['encrypt_folder']=='';
         $foldername = spurlencode($_GET['encrypt_folder']);
-        $filename = path_format($path1 . '/' . $foldername . '/' . getConfig('passfile'));
+        $filename = path_format($path1 . '/' . $foldername . '/' . urlencode(getConfig('passfile')));
                 //echo $foldername;
         $result = MSAPI('PUT', $filename, $_GET['encrypt_newpass'], $_SERVER['access_token']);
         $path1 = path_format($path1 . '/' . $foldername );
