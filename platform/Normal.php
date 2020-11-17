@@ -4,7 +4,8 @@ function getpath()
 {
     $_SERVER['firstacceptlanguage'] = strtolower(splitfirst(splitfirst($_SERVER['HTTP_ACCEPT_LANGUAGE'],';')[0],',')[0]);
     if (isset($_SERVER['HTTP_X_FORWARDED_FOR'])) $_SERVER['REMOTE_ADDR'] = $_SERVER['HTTP_X_FORWARDED_FOR'];
-    $_SERVER['base_path'] = path_format(substr($_SERVER['SCRIPT_NAME'], 0, -10) . '/');
+    if (isset($_SERVER['DOCUMENT_ROOT'])&&$_SERVER['DOCUMENT_ROOT']==='/app') $_SERVER['base_path'] = '/';
+    else $_SERVER['base_path'] = path_format(substr($_SERVER['SCRIPT_NAME'], 0, -10) . '/');
     if (isset($_SERVER['UNENCODED_URL'])) $_SERVER['REQUEST_URI'] = $_SERVER['UNENCODED_URL'];
     $p = strpos($_SERVER['REQUEST_URI'],'?');
     if ($p>0) $path = substr($_SERVER['REQUEST_URI'], 0, $p);
@@ -46,7 +47,7 @@ function getConfig($str, $disktag = '')
     global $InnerEnv;
     global $Base64Env;
     //include 'config.php';
-    $s = file_get_contents('config.php');
+    $s = file_get_contents('.data/config.php');
     //$configs = substr($s, 18, -2);
     $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') {
@@ -73,7 +74,7 @@ function setConfig($arr, $disktag = '')
     global $Base64Env;
     if ($disktag=='') $disktag = $_SERVER['disktag'];
     //include 'config.php';
-    $s = file_get_contents('config.php');
+    $s = file_get_contents('.data/config.php');
     //$configs = substr($s, 18, -2);
     $configs = '{' . splitlast(splitfirst($s, '{')[1], '}')[0] . '}';
     if ($configs!='') $envs = json_decode($configs, true);
@@ -114,7 +115,7 @@ function setConfig($arr, $disktag = '')
     //echo '<pre>'. json_encode($envs, JSON_PRETTY_PRINT).'</pre>';
     $prestr = '<?php $configs = \'' . PHP_EOL;
     $aftstr = PHP_EOL . '\';';
-    $response = file_put_contents('config.php', $prestr . json_encode($envs, JSON_PRETTY_PRINT) . $aftstr);
+    $response = file_put_contents('.data/config.php', $prestr . json_encode($envs, JSON_PRETTY_PRINT) . $aftstr);
     if ($response>0) return json_encode( [ 'response' => 'success' ] );
     return json_encode( [ 'message' => 'Failed to write config.', 'code' => 'failed' ] );
 }
@@ -183,7 +184,7 @@ function install()
             //if (location.port!="") url += ":" + location.port;
             url += location.pathname;
             if (url.substr(-1)!="/") url += "/";
-            url += "config.php";
+            url += ".data/config.php";
             //alert(url);
             var xhr4 = new XMLHttpRequest();
             xhr4.open("GET", url);
@@ -248,7 +249,7 @@ function RewriteEngineOn()
 {
     $http_type = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https')) ? 'https://' : 'http://';
     $tmpurl = $http_type . $_SERVER['SERVER_NAME'].':'.$_SERVER['SERVER_PORT'];
-    $tmpurl .= path_format($_SERVER['base_path'] . '/config.php');
+    $tmpurl .= path_format($_SERVER['base_path'] . '/.data/config.php');
     $tmp = curl_request($tmpurl);
     if ($tmp['stat']==200) return false;
     if ($tmp['stat']==201) return true; //when install return 201, after installed return 404 or 200;
@@ -308,10 +309,10 @@ function OnekeyUpate($auth = 'qkqpttgf', $project = 'OneManager-php', $branch = 
     if ($outPath=='') return 0;
 
     //unlink($outPath.'/config.php');
-    $response = rename($projectPath . $slash . 'config.php', $outPath . $slash . 'config.php');
+    $response = rename($projectPath . $slash . '.data' . $slash . 'config.php', $outPath . $slash . '.data' . $slash . 'config.php');
     if (!$response) {
         $tmp1['code'] = "Move Failed";
-        $tmp1['message'] = "Can not move " . $projectPath . $slash . 'config.php' . " to " . $outPath . $slash . 'config.php';
+        $tmp1['message'] = "Can not move " . $projectPath . $slash . '.data' . $slash . 'config.php' . " to " . $outPath . $slash . '.data' . $slash . 'config.php';
         return json_encode($tmp1);
     }
     return moveFolder($outPath, $projectPath, $slash);
