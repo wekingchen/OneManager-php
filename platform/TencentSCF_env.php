@@ -24,6 +24,11 @@ function GetGlobalVariable($event)
         $_COOKIE[urldecode(substr($cookievalues,0,$pos))]=urldecode(substr($cookievalues,$pos+1));
     }
     $_SERVER['HTTP_USER_AGENT'] = $event['headers']['user-agent'];
+    if (isset($event['headers']['authorization'])) {
+        $basicAuth = splitfirst(base64_decode(splitfirst($event['headers']['authorization'], 'Basic ')[1]), ':');
+        $_SERVER['PHP_AUTH_USER'] = $basicAuth[0];
+        $_SERVER['PHP_AUTH_PW'] = $basicAuth[1];
+    }
     $_SERVER['HTTP_TRANSLATE']==$event['headers']['translate'];//'f'
     $_SERVER['USER'] = 'qcloud';
 }
@@ -54,17 +59,15 @@ function GetPathSetting($event, $context)
 
 function getConfig($str, $disktag = '')
 {
-    global $InnerEnv;
-    global $Base64Env;
-    if (in_array($str, $InnerEnv)) {
+    if (isInnerEnv($str)) {
         if ($disktag=='') $disktag = $_SERVER['disktag'];
         $env = json_decode(getenv($disktag), true);
         if (isset($env[$str])) {
-            if (in_array($str, $Base64Env)) return base64y_decode($env[$str]);
+            if (isBase64Env($str)) return base64y_decode($env[$str]);
             else return $env[$str];
         }
     } else {
-        if (in_array($str, $Base64Env)) return base64y_decode(getenv($str));
+        if (isBase64Env($str)) return base64y_decode(getenv($str));
         else return getenv($str);
     }
     return '';
@@ -72,28 +75,28 @@ function getConfig($str, $disktag = '')
 
 function setConfig($arr, $disktag = '')
 {
-    global $InnerEnv;
-    global $Base64Env;
     if ($disktag=='') $disktag = $_SERVER['disktag'];
     $disktags = explode("|",getConfig('disktag'));
     $diskconfig = json_decode(getenv($disktag), true);
     $tmp = [];
     $indisk = 0;
-    $oparetdisk = 0;
+    $operatedisk = 0;
     foreach ($arr as $k => $v) {
-        if (in_array($k, $InnerEnv)) {
-            if (in_array($k, $Base64Env)) $diskconfig[$k] = base64y_encode($v);
+        if (isInnerEnv($k)) {
+            if (isBase64Env($k)) $diskconfig[$k] = base64y_encode($v);
             else $diskconfig[$k] = $v;
             $indisk = 1;
         } elseif ($k=='disktag_add') {
             array_push($disktags, $v);
-            $oparetdisk = 1;
+            $operatedisk = 1;
         } elseif ($k=='disktag_del') {
             $disktags = array_diff($disktags, [ $v ]);
             $tmp[$v] = '';
-            $oparetdisk = 1;
+            $operatedisk = 1;
+        } elseif ($k=='disktag_rename' || $k=='disktag_newname') {
+            if ($arr['disktag_rename']!=$arr['disktag_newname']) $operatedisk = 1;
         } else {
-            if (in_array($k, $Base64Env)) $tmp[$k] = base64y_encode($v);
+            if (isBase64Env($k)) $tmp[$k] = base64y_encode($v);
             else $tmp[$k] = $v;
         }
     }
@@ -102,11 +105,17 @@ function setConfig($arr, $disktag = '')
         ksort($diskconfig);
         $tmp[$disktag] = json_encode($diskconfig);
     }
-    if ($oparetdisk) {
-        $disktags = array_unique($disktags);
-        foreach ($disktags as $disktag) if ($disktag!='') $disktag_s .= $disktag . '|';
-        if ($disktag_s!='') $tmp['disktag'] = substr($disktag_s, 0, -1);
-        else $tmp['disktag'] = '';
+    if ($operatedisk) {
+        if (isset($arr['disktag_newname']) && $arr['disktag_newname']!='') {
+            $tmp['disktag'] = str_replace($arr['disktag_rename'], $arr['disktag_newname'], getConfig('disktag'));
+            $tmp[$arr['disktag_newname']] = getConfig($arr['disktag_rename']);
+            $tmp[$arr['disktag_rename']] = '';
+        } else {
+            $disktags = array_unique($disktags);
+            foreach ($disktags as $disktag) if ($disktag!='') $disktag_s .= $disktag . '|';
+            if ($disktag_s!='') $tmp['disktag'] = substr($disktag_s, 0, -1);
+            else $tmp['disktag'] = '';
+        }
     }
 //    echo '正式设置：'.json_encode($tmp,JSON_PRETTY_PRINT).'
 //';
@@ -248,7 +257,7 @@ language:<br>';
         return message($html, $title, 201);
     }
     $html .= '<a href="?install0">'.getconstStr('ClickInstall').'</a>, '.getconstStr('LogintoBind');
-    $title = 'Error';
+    $title = 'Install';
     return message($html, $title, 201);
 }
 
@@ -316,7 +325,8 @@ function updateEnvironment($Envs, $function_name, $Region, $Namespace, $SecretId
     }
     $tmp_env = array_filter($tmp_env, 'array_value_isnot_null'); // remove null. 清除空值
     //$tmp_env['Region'] = $Region;
-    ksort($tmp_env);
+    //ksort($tmp_env);
+    sortConfig($tmp_env);
 
     $i = 0;
     foreach ($tmp_env as $key1 => $value1) {
