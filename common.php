@@ -35,25 +35,27 @@ $EnvConfigs = [
     'customCss'         => 0b011,
     'customTheme'       => 0b011,
     'theme'             => 0b010,
+    'dontBasicAuth'     => 0b010,
 
     'Driver'            => 0b100,
     'client_id'         => 0b100,
     'client_secret'     => 0b101,
-    'diskname'          => 0b111,
-    'domain_path'       => 0b111,
-    'downloadencrypt'   => 0b110,
-    'guestup_path'      => 0b111,
     'sharepointSite'    => 0b101,
     'shareurl'          => 0b101,
     //'sharecookie'       => 0b101,
     'shareapiurl'       => 0b101,
     'siteid'            => 0b100,
-    'domainforproxy'    => 0b111,
-    'public_path'       => 0b111,
     'refresh_token'     => 0b100,
     'token_expires'     => 0b100,
     'default_drive_id'  => 0b100,
     'default_sbox_drive_id'=> 0b100,
+
+    'diskname'          => 0b111,
+    'domain_path'       => 0b111,
+    'downloadencrypt'   => 0b110,
+    'guestup_path'      => 0b111,
+    'domainforproxy'    => 0b111,
+    'public_path'       => 0b111,
 ];
 
 $timezones = array( 
@@ -161,13 +163,9 @@ function main($path)
         } else {
             $url = path_format($_SERVER['PHP_SELF'] . '/');
         }
-        if (getConfig('admin')!='') {
-            if ($_POST['password1']==getConfig('admin')) {
-                return adminform('admin', pass2cookie('admin', $_POST['password1']), $url);
-            } else return adminform();
-        } else {
-            return output('', 302, [ 'Location' => $url ]);
-        }
+        if ($_POST['password1']==getConfig('admin')) {
+            return adminform('admin', pass2cookie('admin', $_POST['password1']), $url);
+        } else return adminform();
     }
     if ( isset($_COOKIE['admin'])&&$_COOKIE['admin']==pass2cookie('admin', getConfig('admin')) ) {
         $_SERVER['admin']=1;
@@ -188,7 +186,7 @@ function main($path)
     if (empty($_SERVER['sitename'])) $_SERVER['sitename'] = getconstStr('defaultSitename');
     $_SERVER['base_disk_path'] = $_SERVER['base_path'];
     $disktags = explode("|", getConfig('disktag'));
-//    echo 'count$disk:'.count($disktags);
+    //    echo 'count$disk:'.count($disktags);
     if (count($disktags)>1) {
         if ($path=='/'||$path=='') {
             $files['type'] = 'folder';
@@ -225,8 +223,7 @@ function main($path)
             if ($_SERVER['disktag']!='') $_SERVER['base_disk_path'] = path_format($_SERVER['base_disk_path'] . '/' . $_SERVER['disktag'] . '/');
         }
     } else $_SERVER['disktag'] = $disktags[0];
-//    echo 'main.disktag:'.$_SERVER['disktag'].'，path:'.$path.'
-//';
+    //    echo 'main.disktag:'.$_SERVER['disktag'].'，path:'.$path.'';
     $_SERVER['list_path'] = getListpath($_SERVER['HTTP_HOST']);
     if ($_SERVER['list_path']=='') $_SERVER['list_path'] = '/';
     $_SERVER['is_guestup_path'] = is_guestup_path($path);
@@ -237,7 +234,7 @@ function main($path)
     if (isset($_GET['AddDisk'])) {
         if ($_SERVER['admin']) {
             if (!class_exists($_GET['AddDisk'])) require 'disk' . $slash . $_GET['AddDisk'] . '.php';
-                $drive = new $_GET['AddDisk']($_COOKIE['disktag']);
+                $drive = new $_GET['AddDisk']($_GET['disktag']);
                 return $drive->AddDisk();
         } else {
             $url = $_SERVER['PHP_SELF'];
@@ -270,7 +267,7 @@ function main($path)
         }
         if ($_GET['action']=='upbigfile') {
             if (!$_SERVER['admin']) {
-                if (!is_guestup_path($path)) return output('Not_Guest_Upload_Folder', 400);
+                if (!$_SERVER['is_guestup_path']) return output('Not_Guest_Upload_Folder', 400);
                 if (strpos($_GET['upbigfilename'], '../')!==false) return output('Not_Allow_Cross_Path', 400);
             }
             $path1 = path_format($_SERVER['list_path'] . path_format($path));
@@ -316,13 +313,15 @@ function main($path)
     // list folder
     if ($_SERVER['is_guestup_path'] && !$_SERVER['admin']) {
         $files = json_decode('{"type":"folder"}', true);
-    } elseif (!getConfig('downloadencrypt', $_SERVER['disktag'])) {
-        if ($_SERVER['ishidden']==4) $files = json_decode('{"type":"folder"}', true);
-        else {
+    } elseif ($_SERVER['ishidden']==4) {
+        if (!getConfig('downloadencrypt', $_SERVER['disktag'])) {
+            $files = json_decode('{"type":"folder"}', true);
+        } else {
             $path1 = path_format($_SERVER['list_path'] . path_format($path));
             if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1, 0, -1);
             $files = $drive->list_files($path1);
-        } 
+            if ($files['type']=='folder') $files = json_decode('{"type":"folder"}', true);
+        }
     } else {
         $path1 = path_format($_SERVER['list_path'] . path_format($path));
         if ($path1!='/'&&substr($path1,-1)=='/') $path1=substr($path1, 0, -1);
@@ -405,11 +404,19 @@ function driveisfine($tag, &$drive = null)
     else return false;
 }
 
-function baseclassofdrive()
+function baseclassofdrive($d = null)
 {
     global $drive;
-    if (!$drive) return false;
-    return $drive->show_base_class();
+    if (!$d) $dr = $drive;
+    else $dr = $d;
+    if (!$dr) return false;
+    return $dr->show_base_class();
+}
+
+function extendShow_diskenv($drive)
+{
+    if (!$drive) return [];
+    return $drive->ext_show_innerenv();
 }
 
 function pass2cookie($name, $pass)
@@ -688,12 +695,15 @@ function comppass($pass)
         return 2;
     }
     if ($_COOKIE['password'] !== '') if ($_COOKIE['password'] === $pass ) return 3;
-    //$_SERVER['PHP_AUTH_USER']
-    if ($_SERVER['PHP_AUTH_PW'] !== '') if (md5($_SERVER['PHP_AUTH_PW']) === $pass ) {
-        date_default_timezone_set('UTC');
-        $_SERVER['Set-Cookie'] = 'password='.$pass.'; expires='.date(DATE_COOKIE,strtotime('+1hour'));
-        date_default_timezone_set(get_timezone($_SERVER['timezone']));
-        return 2;
+    if (!getConfig('dontBasicAuth')) {
+        // use Basic Auth
+        //$_SERVER['PHP_AUTH_USER']
+        if ($_SERVER['PHP_AUTH_PW'] !== '') if (md5($_SERVER['PHP_AUTH_PW']) === $pass ) {
+            date_default_timezone_set('UTC');
+            $_SERVER['Set-Cookie'] = 'password='.$pass.'; expires='.date(DATE_COOKIE,strtotime('+1hour'));
+            date_default_timezone_set(get_timezone($_SERVER['timezone']));
+            return 2;
+        }
     }
     return 4;
 }
@@ -719,9 +729,13 @@ function gethiddenpass($path,$passfile)
             if ($arr['stat']==200) {
                 $passwordf=explode("\n",$arr['body']);
                 $password=$passwordf[0];
-                if ($password!='') $password=md5($password);
-                savecache('path_' . $path1 . '/?password', $password, $_SERVER['disktag']);
-                return $password;
+                if ($password==='') {
+                    return '';
+                } else {
+                    $password=md5($password);
+                    savecache('path_' . $path1 . '/?password', $password, $_SERVER['disktag']);
+                    return $password;
+                }
             } else {
                 //return md5('DefaultP@sswordWhenNetworkError');
                 return md5( md5(time()).rand(1000,9999) );
@@ -800,6 +814,8 @@ function needUpdate()
 
 function output($body, $statusCode = 200, $headers = ['Content-Type' => 'text/html'], $isBase64Encoded = false)
 {
+    //$headers['Referrer-Policy'] = 'same-origin';
+    $headers['Referrer-Policy'] = 'no-referrer';
     return [
         'isBase64Encoded' => $isBase64Encoded,
         'statusCode' => $statusCode,
@@ -1053,8 +1069,7 @@ function EnvOpt($needUpdate = 0)
             $title = 'Error';
         } else {
             //WaitSCFStat();
-            $html .= getconstStr('UpdateSuccess') . '<br>
-<button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>';
+            $html .= getconstStr('UpdateSuccess') . '<br><a href="">' . getconstStr('Back') . '</a>';
             $title = getconstStr('Setup');
         }
         return message($html, $title);
@@ -1062,18 +1077,19 @@ function EnvOpt($needUpdate = 0)
     if (isset($_POST['submit1'])) {
         $_SERVER['disk_oprating'] = '';
         foreach ($_POST as $k => $v) {
-            if (isShowedEnv($k) || $k=='disktag_del' || $k=='disktag_add' || $k=='disktag_rename') {
+            if (isShowedEnv($k) || $k=='disktag_del' || $k=='disktag_add' || $k=='disktag_rename' || $k=='disktag_copy') {
                 $tmp[$k] = $v;
             }
             if ($k=='disktag_newname') {
                 $v = preg_replace('/[^0-9a-zA-Z|_]/i', '', $v);
                 $f = substr($v, 0, 1);
                 if (strlen($v)==1) $v .= '_';
-                //if (in_array($v, $CommonEnv)) {
                 if (isCommonEnv($v)) {
-                    return message('Do not input ' . $envs . '<br><button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button><script>document.cookie=\'disktag=; path=/\';</script>', 'Error', 201);
+                    return message('Do not input ' . $envs . '<br><a href="">' . getconstStr('Back') . '</a>', 'Error', 201);
                 } elseif (!(('a'<=$f && $f<='z') || ('A'<=$f && $f<='Z'))) {
-                    return message('Please start with letters');
+                    return message('<a href="">' . getconstStr('Back') . '</a>', 'Please start with letters', 201);
+                } elseif (getConfig($v)) {
+                    return message('<a href="">' . getconstStr('Back') . '</a>', 'Same tag', 201);
                 } else {
                     $tmp[$k] = $v;
                 }
@@ -1100,7 +1116,7 @@ function EnvOpt($needUpdate = 0)
             $title = 'Error';
         } else {
             $html .= getconstStr('Success') . '!<br>
-<button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>';
+            <a href="">' . getconstStr('Back') . '</a>';
             $title = getconstStr('Setup');
         }
         return message($html, $title);
@@ -1253,11 +1269,13 @@ function EnvOpt($needUpdate = 0)
     }
     foreach ($disktags as $disktag) {
         if ($disktag!='') {
+            $disk_tmp = null;
+            $diskok = driveisfine($disktag, $disk_tmp);
             $html .= '
 <table border=1 width=100%>
     <tr>
         <td>
-            <form action="" method="post" style="margin: 0">
+            <form action="" method="post" style="margin: 0" onsubmit="return deldiskconfirm(this);">
                 <input type="hidden" name="disktag_del" value="'.$disktag.'">
                 <input type="submit" name="submit1" value="'.getconstStr('DelDisk').'">
             </form>
@@ -1268,22 +1286,25 @@ function EnvOpt($needUpdate = 0)
                 <input type="text" name="disktag_newname" value="'.$disktag.'" placeholder="' . getconstStr('EnvironmentsDescription')['disktag'] . '">
                 <input type="submit" name="submit1" value="'.getconstStr('RenameDisk').'">
             </form>
+            <form action="" method="post" style="margin: 0">
+                <input type="hidden" name="disktag_copy" value="' . $disktag . '">
+                <input type="submit" name="submit1" value="' . getconstStr('CopyDisk') . '">
+            </form>
         </td>
     </tr>
     <tr>
         <td>Driver</td>
-        <td>' . getConfig('Driver', $disktag) . '</td>
+        <td>' . getConfig('Driver', $disktag);
+            if ($diskok && baseclassofdrive($disk_tmp)=='Onedrive') $html .= ' <a href="?AddDisk=' . get_class($disk_tmp) . '&disktag=' . $disktag . '&SelectDrive">' . getconstStr('ChangeOnedrivetype') . '</a>';
+            $html .= '</td>
     </tr>
     ';
-            $tmp = getConfig('shareurl', $disktag);
-            if ($tmp!='') $html .= '<tr><td>shareurl</td><td>' . $tmp . '</td></tr>';
-            $tmp = getConfig('siteid', $disktag);
-            if ($tmp!='') {
-                $html .= '<tr><td>Site</td><td>' . getConfig('sharepointSite', $disktag) . '</td></tr>';
-                $html .= '<tr><td>siteid</td><td>' . $tmp . '</td></tr>';
+            foreach (extendShow_diskenv($disk_tmp) as $ext_env) {
+                $html .= '<tr><td>' . $ext_env . '</td><td>' . getConfig($ext_env, $disktag) . '</td></tr>
+    ';
             }
 
-            if (driveisfine($disktag)) {
+            if ($diskok) {
                 $html .= '
     <form name="'.$disktag.'" action="" method="post">
         <input type="hidden" name="disk" value="'.$disktag.'">';
@@ -1354,13 +1375,18 @@ function EnvOpt($needUpdate = 0)
 <form name="updateform" action="" method="post">
     <input type="text" name="auth" size="6" placeholder="auth" value="qkqpttgf">
     <input type="text" name="project" size="12" placeholder="project" value="OneManager-php">
-    <button name="QueryBranchs" onclick="querybranchs();return false">'.getconstStr('QueryBranchs').'</button>
+    <button name="QueryBranchs" onclick="querybranchs();return false;">'.getconstStr('QueryBranchs').'</button>
     <select name="branch">
         <option value="master">master</option>
     </select>
     <input type="submit" name="updateProgram" value="'.getconstStr('updateProgram').'">
 </form>
 <script>
+    function deldiskconfirm(t) {
+        var msg="' . getconstStr('Delete') . ' ??";
+        if (confirm(msg)==true) return true;
+        else return false;
+    }
     function renametag(t) {
         if (t.disktag_newname.value==\'\') {
             alert(\''.getconstStr('DiskTag').'\');
@@ -1616,8 +1642,10 @@ function render_list($path = '', $files = [])
 
         if ($_SERVER['ishidden']==4) {
             // 加密状态
-            // Basic Auth
-            return output('Need password.', 401, ['WWW-Authenticate'=>'Basic realm="Secure Area"']);
+            if (!getConfig('dontBasicAuth')) {
+                // use Basic Auth
+                return output('Need password.', 401, ['WWW-Authenticate'=>'Basic realm="Secure Area"']);
+            }
             /*$tmp[1] = 'a';
             while ($tmp[1]!='') {
                 $tmp = splitfirst($html, '<!--ListStart-->');
@@ -1661,6 +1689,30 @@ function render_list($path = '', $files = [])
                 $tmp = splitfirst($html, '<!--IsNotHiddenStart-->');
                 $html = $tmp[0];
                 $tmp = splitfirst($tmp[1], '<!--IsNotHiddenEnd-->');
+                $html .= $tmp[1];
+            }
+            while (strpos($html, '<!--HeadomfStart-->')) {
+                $tmp = splitfirst($html, '<!--HeadomfStart-->');
+                $html = $tmp[0];
+                $tmp = splitfirst($tmp[1], '<!--HeadomfEnd-->');
+                $html .= $tmp[1];
+            }
+            while (strpos($html, '<!--HeadmdStart-->')) {
+                $tmp = splitfirst($html, '<!--HeadmdStart-->');
+                $html = $tmp[0];
+                $tmp = splitfirst($tmp[1], '<!--HeadmdEnd-->');
+                $html .= $tmp[1];
+            }
+            while (strpos($html, '<!--ReadmemdStart-->')) {
+                $tmp = splitfirst($html, '<!--ReadmemdStart-->');
+                $html = $tmp[0];
+                $tmp = splitfirst($tmp[1], '<!--ReadmemdEnd-->');
+                $html .= $tmp[1];
+            }
+            while (strpos($html, '<!--FootomfStart-->')) {
+                $tmp = splitfirst($html, '<!--FootomfStart-->');
+                $html = $tmp[0];
+                $tmp = splitfirst($tmp[1], '<!--FootomfEnd-->');
                 $html .= $tmp[1];
             }
         } else {

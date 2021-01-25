@@ -25,6 +25,11 @@ class Aliyundrive {
         //return $tmp;
     }
 
+    public function ext_show_innerenv()
+    {
+        return [];
+    }
+
     public function list_files($path = '/')
     {
         
@@ -61,18 +66,19 @@ class Aliyundrive {
             $tmp['size'] = $files['size'];
             //$tmp['page'] = $files['folder']['page'];
             foreach ($files['items'] as $file) {
+                $filename = strtolower($file['name']);
                 if ($file['type']=='file') {
-                    $tmp['list'][$file['name']]['type'] = 'file';
-                    $tmp['list'][$file['name']]['url'] = $file['download_url'];
-                    $tmp['list'][$file['name']]['mime'] = $file['file']['content_type'];
+                    $tmp['list'][$filename]['type'] = 'file';
+                    $tmp['list'][$filename]['url'] = $file['download_url'];
+                    $tmp['list'][$filename]['mime'] = $file['file']['content_type'];
                 } elseif ($file['type']=='folder') {
-                    $tmp['list'][$file['name']]['type'] = 'folder';
+                    $tmp['list'][$filename]['type'] = 'folder';
                 }
                 //$tmp['id'] = $file['parent_file_id'];
-                $tmp['list'][$file['name']]['id'] = $file['file_id'];
-                $tmp['list'][$file['name']]['name'] = $file['name'];
-                $tmp['list'][$file['name']]['time'] = $file['updated_at'];
-                $tmp['list'][$file['name']]['size'] = $file['size'];
+                $tmp['list'][$filename]['id'] = $file['file_id'];
+                $tmp['list'][$filename]['name'] = $file['name'];
+                $tmp['list'][$filename]['time'] = $file['updated_at'];
+                $tmp['list'][$filename]['size'] = $file['size'];
                 $tmp['childcount']++;
             }
         } elseif (isset($files['code'])) {
@@ -221,6 +227,10 @@ class Aliyundrive {
         $existfile = $this->list_path($folder['path'] . '/' . $passfilename);
         if (isset($existfile['type'])) { // 删掉原文件
             $this->Delete(['id'=>$existfile['file_id']]);
+        }
+        if ($pass==='') {
+            // 如果为空，上面已经删除了
+            return output('Success', 200);
         }
         if (!$folder['id']) {
             $res = $this->list_path($folder['path']);
@@ -595,8 +605,7 @@ class Aliyundrive {
                 document.cookie=\'disktag=; path=/; \'+expires;
                 </script>', 'Error', 201);
             }
-            $tmp['refresh_token'] = $_POST['refresh_token'];
-            $res = curl('POST', $this->auth_url, json_encode($tmp), ["content-type"=>"application/json; charset=utf-8"]);
+            $res = curl('POST', $this->auth_url, json_encode([ 'refresh_token' => $_POST['refresh_token'] ]), ["content-type"=>"application/json; charset=utf-8"]);
             //return output($res['body']);
             if ($res['stat']!=200) {
                 return message($res['body'], $res['stat'], $res['stat']);
@@ -614,6 +623,7 @@ class Aliyundrive {
             $tmp['Driver'] = 'Aliyundrive';
             $tmp['disktag_add'] = $_POST['disktag_add'];
             $tmp['diskname'] = $_POST['diskname'];
+            //error_log(json_encode($tmp));
 
             $response = setConfigResponse( setConfig($tmp, $this->disktag) );
             if (api_error($response)) {
@@ -675,11 +685,11 @@ class Aliyundrive {
                     return false;
             }
             
-            document.getElementById("form1").action="?install0&AddDisk=Aliyundrive";
-            var expd = new Date();
-            expd.setTime(expd.getTime()+(2*60*60*1000));
-            var expires = "expires="+expd.toGMTString();
-            document.cookie=\'disktag=\'+t.disktag_add.value+\'; path=/; \'+expires;
+            document.getElementById("form1").action="?install0&disktag=" + t.disktag_add.value + "&AddDisk=Aliyundrive";
+            //var expd = new Date();
+            //expd.setTime(expd.getTime()+(2*60*60*1000));
+            //var expires = "expires="+expd.toGMTString();
+            //document.cookie=\'disktag=\'+t.disktag_add.value+\'; path=/; \'+expires;
             return true;
         }
     </script>';

@@ -38,6 +38,11 @@ class Onedrive {
         //return $tmp;
     }
 
+    public function ext_show_innerenv()
+    {
+        return [];
+    }
+
     public function list_files($path = '/')
     {
         global $exts;
@@ -82,20 +87,15 @@ class Onedrive {
                     if ($files['folder']['childCount']>200) {
                         // files num > 200 , then get nextlink
                         $page = $_POST['pagenum']==''?1:$_POST['pagenum'];
-                        if ($page>1) if (!($files = getcache('path_' . $path . '_' . $page, $this->disktag))) {
-                            $files = $this->fetch_files_children($files, $path, $page);
-                        //$files['children'] = children_name($files['children']);
-                        /*$url = $_SERVER['api_url'];
-                        if ($path !== '/') {
-                            $url .= ':' . $path;
-                            if (substr($url,-1)=='/') $url=substr($url,0,-1);
-                            $url .= ':/children?$top=9999&$select=id,name,size,file,folder,parentReference,lastModifiedDateTime,'.$this->DownurlStrName;
-                        } else {
-                            $url .= '/children?$top=9999&$select=id,name,size,file,folder,parentReference,lastModifiedDateTime,'.$this->DownurlStrName;
-                        }
-                        $children = json_decode(curl_request($url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
-                        $files['children'] = $children['value'];*/
-                            savecache('path_' . $path . '_' . $page, $files, $this->disktag);
+                        if ($page>1)
+                        //if (!($files = getcache('path_1' . $path . '_' . $page, $this->disktag)))
+                        {
+                            $children = $this->fetch_files_children($path, $page);
+                            //echo '<pre>' . json_encode($children, JSON_PRETTY_PRINT) . '</pre>';
+                            $files['children'] = $children['value'];
+                            //$files['children'] = children_name($files['children']);
+                            $files['folder']['page'] = $page;
+                            //savecache('path_' . $path . '_' . $page, $files, $this->disktag);
                         }
                     } else {
                     // files num < 200 , then cache
@@ -155,19 +155,20 @@ class Onedrive {
             $tmp['childcount'] = $files['folder']['childCount'];
             $tmp['page'] = $files['folder']['page'];
             foreach ($files['children'] as $file) {
+                $filename = strtolower($file['name']);
                 if (isset($file['file'])) {
-                    $tmp['list'][$file['name']]['type'] = 'file';
+                    $tmp['list'][$filename]['type'] = 'file';
                     //var_dump($file);
                     //echo $file['name'] . ':' . $this->DownurlStrName . ':' . $file[$this->DownurlStrName] . PHP_EOL;
-                    $tmp['list'][$file['name']]['url'] = $file[$this->DownurlStrName];
-                    $tmp['list'][$file['name']]['mime'] = $file['file']['mimeType'];
+                    $tmp['list'][$filename]['url'] = $file[$this->DownurlStrName];
+                    $tmp['list'][$filename]['mime'] = $file['file']['mimeType'];
                 } elseif (isset($file['folder'])) {
-                    $tmp['list'][$file['name']]['type'] = 'folder';
+                    $tmp['list'][$filename]['type'] = 'folder';
                 }
-                $tmp['list'][$file['name']]['id'] = $file['id'];
-                $tmp['list'][$file['name']]['name'] = $file['name'];
-                $tmp['list'][$file['name']]['time'] = $file['lastModifiedDateTime'];
-                $tmp['list'][$file['name']]['size'] = $file['size'];
+                $tmp['list'][$filename]['id'] = $file['id'];
+                $tmp['list'][$filename]['name'] = $file['name'];
+                $tmp['list'][$filename]['time'] = $file['lastModifiedDateTime'];
+                $tmp['list'][$filename]['size'] = $file['size'];
             }
         } elseif (isset($files['error'])) {
             return $files;
@@ -176,21 +177,70 @@ class Onedrive {
         return $tmp;
     }
 
-    protected function fetch_files_children($files, $path, $page)
-    {
-        $cachefilename = '.SCFcache_'.$_SERVER['function_name'];
-        $maxpage = ceil($files['folder']['childCount']/200);
-        if (!($files['children'] = getcache('files_' . $path . '_page_' . $page, $this->disktag))) {
-            // down cache file get jump info. 下载cache文件获取跳页链接
-            $cachefile = $this->list_files(path_format($path . '/' .$cachefilename));
-            if ($cachefile['size']>0) {
-                $pageinfo = curl('GET', $cachefile[$this->DownurlStrName])['body'];
-                $pageinfo = json_decode($pageinfo,true);
-                for ($page4=1;$page4<$maxpage;$page4++) {
-                    savecache('nextlink_' . $path . '_page_' . $page4, $pageinfo['nextlink_' . $path . '_page_' . $page4], $this->disktag);
-                    $pageinfocache['nextlink_' . $path . '_page_' . $page4] = $pageinfo['nextlink_' . $path . '_page_' . $page4];
+    protected function fetch_files_children($path, $page, $getNextlink = false) {
+        $children = getcache('files_' . $path . '_page_' . $page, $this->disktag);
+        if (!$children) {
+            $url = $this->api_url . $this->ext_api_url;
+            if ($path !== '/') {
+                $url .= ':' . $path;
+                if (substr($url,-1)=='/') $url=substr($url,0,-1);
+                $url .= ':';
+            }
+            $url .= '/children?$top=' . ($page-1)*200 . '&$select=id,name,size,file,folder,parentReference,lastModifiedDateTime,' . $this->DownurlStrName;
+            $children_tmp = json_decode(curl('GET', $url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
+            //echo $url . '<br><pre>' . json_encode($children_tmp, JSON_PRETTY_PRINT) . '</pre>';
+            $p = 1;
+            $i = 0;
+            foreach ($children_tmp['value'] as $child) {
+                $i++;
+                $value_name = 'child_' . $p;
+                ${$value_name}['value'][] = $child;
+                if ($i==200) {
+                    savecache('files_' . $path . '_page_' . $p, ${$value_name}, $this->disktag);
+                    unset(${$value_name});
+                    $i = 0;
+                    $p++;
                 }
             }
+
+            $url = $children_tmp['@odata.nextLink'];
+            $children_tmp = json_decode(curl('GET', $url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
+            //echo $url . '<br><pre>' . json_encode($children_tmp, JSON_PRETTY_PRINT) . '</pre>';
+            $p = $page;
+            $i = 0;
+            foreach ($children_tmp['value'] as $child) {
+                $i++;
+                $value_name = 'child_' . $p;
+                ${$value_name}['value'][] = $child;
+                if ($i==200) {
+                    savecache('files_' . $path . '_page_' . $p, ${$value_name}, $this->disktag);
+                    //unset(${$value_name});
+                    $i = 0;
+                    $p++;
+                }
+            }
+            if ($i!=0) savecache('files_' . $path . '_page_' . $p, ${$value_name}, $this->disktag);
+            $value_name = 'child_' . $page;
+            return ${$value_name};
+        }
+        return $children;
+        
+        /*if ($getNextlink) {
+            if (isset($children['@odata.nextLink'])) {
+                return $children;
+            } else {
+                if ($page*200>9800) {
+                    $children_tmp = fetch_files_children($path, floor($page/49)*49, 1);
+                    $url = $children_tmp['@odata.nextLink'];
+                    $children = json_decode(curl('GET', $url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
+                }
+            }
+        }*/
+    }
+    protected function fetch_files_children1($files, $path, $page)
+    {
+        $maxpage = ceil($files['folder']['childCount']/200);
+        if (!($children = getcache('files_' . $path . '_page_' . $page, $this->disktag))) {
             $pageinfochange=0;
             for ($page1=$page;$page1>=1;$page1--) {
                 $page3=$page1-1;
@@ -206,7 +256,7 @@ class Onedrive {
                         $url .= '/children?$select=id,name,size,file,folder,parentReference,lastModifiedDateTime,'.$this->DownurlStrName;
                         $children = json_decode(curl('GET', $url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
                         // echo $url . '<br><pre>' . json_encode($children, JSON_PRETTY_PRINT) . '</pre>';
-                        savecache('files_' . $path . '_page_' . $page1, $children['value'], $this->disktag);
+                        savecache('files_' . $path . '_page_' . $page1, $children, $this->disktag);
                         $nextlink=getcache('nextlink_' . $path . '_page_' . $page1, $this->disktag);
                         if ($nextlink!=$children['@odata.nextLink']) {
                             savecache('nextlink_' . $path . '_page_' . $page1, $children['@odata.nextLink'], $this->disktag);
@@ -218,7 +268,7 @@ class Onedrive {
                         for ($page2=$page1+1;$page2<=$page;$page2++) {
                             sleep(1);
                             $children = json_decode(curl('GET', $url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
-                            savecache('files_' . $path . '_page_' . $page2, $children['value'], $this->disktag);
+                            savecache('files_' . $path . '_page_' . $page2, $children, $this->disktag);
                             $nextlink=getcache('nextlink_' . $path . '_page_' . $page2, $this->disktag);
                             if ($nextlink!=$children['@odata.nextLink']) {
                                 savecache('nextlink_' . $path . '_page_' . $page2, $children['@odata.nextLink'], $this->disktag);
@@ -229,6 +279,8 @@ class Onedrive {
                             $url = $children['@odata.nextLink'];
                         }
                         //echo $url . '<br><pre>' . json_encode($children, JSON_PRETTY_PRINT) . '</pre>';
+                        return $children;
+                        /*
                         $files['children'] = $children['value'];
                         $files['folder']['page']=$page;
                         $pageinfocache['filenum'] = $files['folder']['childCount'];
@@ -236,13 +288,13 @@ class Onedrive {
                         $pageinfocache['cachesize'] = $cachefile['size'];
                         $pageinfocache['size'] = $files['size']-$cachefile['size'];
                         if ($pageinfochange == 1) $this->MSAPI('PUT', path_format($path.'/'.$cachefilename), json_encode($pageinfocache, JSON_PRETTY_PRINT), $this->access_token)['body'];
-                        return $files;
+                        return $files;*/
                     }
                 } else {
                     for ($page2=$page3+1;$page2<=$page;$page2++) {
                         sleep(1);
                         $children = json_decode(curl('GET', $url, false, ['Authorization' => 'Bearer ' . $this->access_token])['body'], true);
-                        savecache('files_' . $path . '_page_' . $page2, $children['value'], $this->disktag, 3300);
+                        savecache('files_' . $path . '_page_' . $page2, $children, $this->disktag, 3300);
                         $nextlink=getcache('nextlink_' . $path . '_page_' . $page2, $this->disktag);
                         if ($nextlink!=$children['@odata.nextLink']) {
                             savecache('nextlink_' . $path . '_page_' . $page2, $children['@odata.nextLink'], $this->disktag, 3300);
@@ -253,17 +305,19 @@ class Onedrive {
                         $url = $children['@odata.nextLink'];
                     }
                     //echo $url . '<br><pre>' . json_encode($children, JSON_PRETTY_PRINT) . '</pre>';
-                    $files['children'] = $children['value'];
+                    return $children;
+
+                    /*$files['children'] = $children['value'];
                     $files['folder']['page']=$page;
                     $pageinfocache['filenum'] = $files['folder']['childCount'];
                     $pageinfocache['dirsize'] = $files['size'];
                     $pageinfocache['cachesize'] = $cachefile['size'];
                     $pageinfocache['size'] = $files['size']-$cachefile['size'];
                     if ($pageinfochange == 1) $this->MSAPI('PUT', path_format($path.'/'.$cachefilename), json_encode($pageinfocache, JSON_PRETTY_PRINT), $this->access_token)['body'];
-                    return $files;
+                    return $files;*/
                 }
             }
-        } else {
+        }/* else {
             $files['folder']['page']=$page;
             for ($page4=1;$page4<=$maxpage;$page4++) {
                 if (!($url = getcache('nextlink_' . $path . '_page_' . $page4, $this->disktag))) {
@@ -272,8 +326,9 @@ class Onedrive {
                     $files['folder'][$path.'_'.$page4] = $url;
                 }
             }
-        }
-        return $files;
+        }*/
+        return $children;
+        //return $files;
     }
 
     public function Rename($file, $newname) {
@@ -294,7 +349,11 @@ class Onedrive {
     }
     public function Encrypt($folder, $passfilename, $pass) {
         $filename = path_format($folder['path'] . '/' . urlencode($passfilename));
-        $result = $this->MSAPI('PUT', $filename, $pass, $this->access_token);
+        if ($pass==='') {
+            $result = $this->MSAPI('DELETE', $filename, '', $this->access_token);
+        } else {
+            $result = $this->MSAPI('PUT', $filename, $pass, $this->access_token);
+        }
         $path1 = $folder['path'];
         if ($path1!='/'&&substr($path1, -1)=='/') $path1 = substr($path1, 0, -1);
         savecache('path_' . $path1 . '/?password', '', $this->disktag, 1);
@@ -378,7 +437,7 @@ class Onedrive {
         $url = path_format($_SERVER['PHP_SELF'] . '/');
         //$this->api_url = splitfirst($_SERVER['api_url'], '/v1.0')[0] . '/v1.0';
 
-        if (isset($_GET['install4'])) {
+        if (isset($_GET['Finish'])) {
             if ($this->access_token == '') {
                 $refresh_token = getConfig('refresh_token', $this->disktag);
                 if (!$refresh_token) {
@@ -406,7 +465,10 @@ class Onedrive {
                 } else {
                     return message($arr['stat'] . $arr['body'], 'Get User ID', $arr['stat']);
                 }*/
-                $tmp = null;
+                if (get_class($this)=='Sharepoint') $tmp['Driver'] = 'Onedrive';
+                elseif (get_class($this)=='SharepointCN') $tmp['Driver'] = 'OnedriveCN';
+                $tmp['sharepointSite'] = '';
+                $tmp['siteid'] = '';
             } elseif ($_POST['DriveType']=='Custom') {
                 // sitename计算siteid
                 $tmp1 = $this->get_siteid($_POST['sharepointSite']);
@@ -444,7 +506,8 @@ class Onedrive {
             }
         }
 
-        if (isset($_GET['install3'])) {
+        if (isset($_GET['SelectDrive'])) {
+            if (get_class($this)=='Sharelink') return message('Can not change to other.', 'Back', 201);
             if ($this->access_token == '') {
                 $refresh_token = getConfig('refresh_token', $this->disktag);
                 if (!$refresh_token) {
@@ -466,10 +529,10 @@ class Onedrive {
             error_log1($arr['body']);
             $sites = json_decode($arr['body'], true)['value'];
 
-            $title = 'Select Disk';
+            $title = 'Select Driver';
             $html = '
 <div>
-    <form action="?install4&AddDisk=' . get_class($this) . '" method="post" onsubmit="return notnull(this);">
+    <form action="?Finish&disktag=' . $_GET['disktag'] . '&AddDisk=' . get_class($this) . '" method="post" onsubmit="return notnull(this);">
         <label><input type="radio" name="DriveType" value="Onedrive" checked>' . 'Use Onedrive ' . getconstStr(' ') . '</label><br>';
             if ($sites[0]!='') foreach ($sites as $k => $v) {
                 $html .= '
@@ -536,7 +599,7 @@ class Onedrive {
                 } else {
                     savecache('access_token', $ret['access_token'], $this->disktag, $ret['expires_in'] - 60);
                     $str .= '
-                <meta http-equiv="refresh" content="3;URL=' . $url . '?AddDisk=' . get_class($this) . '&install3">';
+                <meta http-equiv="refresh" content="3;URL=' . $url . '?AddDisk=' . get_class($this) . '&disktag=' . $_GET['disktag'] . '&SelectDrive">';
                     return message($str, getconstStr('Wait') . ' 3s', 201);
                 }
             }
@@ -549,7 +612,7 @@ class Onedrive {
                 return message('
     <a href="" id="a1">' . getconstStr('JumptoOffice') . '</a>
     <script>
-        url=location.protocol + "//" + location.host + "' . $url . '?install2&AddDisk=' . get_class($this) . '";
+        url=location.protocol + "//" + location.host + "' . $url . '?install2&disktag=' . $_GET['disktag'] . '&AddDisk=' . get_class($this) . '";
         url="' . $this->oauth_url . 'authorize?scope=' . $this->scope . '&response_type=code&client_id=' . $this->client_id . '&redirect_uri=' . $this->redirect_uri . '&state=' . '"+encodeURIComponent(url);
         document.getElementById(\'a1\').href=url;
         //window.open(url,"_blank");
@@ -567,13 +630,7 @@ class Onedrive {
                 $f = substr($_POST['disktag_add'], 0, 1);
                 if (strlen($_POST['disktag_add'])==1) $_POST['disktag_add'] .= '_';
                 if (isCommonEnv($_POST['disktag_add'])) {
-                    return message('Do not input ' . $envs . '<br><button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>
-                    <script>
-                    var expd = new Date();
-                    expd.setTime(expd.getTime()+1);
-                    var expires = "expires="+expd.toGMTString();
-                    document.cookie=\'disktag=; path=/; \'+expires;
-                    </script>', 'Error', 201);
+                    return message('Do not input ' . $envs . '<br><button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>', 'Error', 201);
                 } elseif (!(('a'<=$f && $f<='z') || ('A'<=$f && $f<='Z'))) {
                     return message('Please start with letters<br><button onclick="location.href = location.href;">'.getconstStr('Refresh').'</button>
                     <script>
@@ -585,6 +642,7 @@ class Onedrive {
                 }
 
                 $tmp = null;
+                // clear envs
                 foreach ($EnvConfigs as $env => $v) if (isInnerEnv($env)) $tmp[$env] = '';
 
                 //$this->disktag = $_POST['disktag_add'];
@@ -608,7 +666,7 @@ class Onedrive {
                     $title = 'Error';
                 } else {
                     $title = getconstStr('MayinEnv');
-                    $html = getconstStr('Wait') . ' 3s<meta http-equiv="refresh" content="3;URL=' . $url . '?install1&AddDisk=' . $_POST['Drive_ver'] . '">';
+                    $html = getconstStr('Wait') . ' 3s<meta http-equiv="refresh" content="3;URL=' . $url . '?install1&disktag=' . $_GET['disktag'] . '&AddDisk=' . $_POST['Drive_ver'] . '">';
                     if ($_POST['Drive_ver']=='Sharelink') $html = getconstStr('Wait') . ' 3s<meta http-equiv="refresh" content="3;URL=' . $url . '">';
                 }
                 return message($html, $title, 201);
@@ -696,11 +754,11 @@ class Onedrive {
                     }
                 }
             }
-            document.getElementById("form1").action="?install0&AddDisk=" + t.Drive_ver.value;
-            var expd = new Date();
-            expd.setTime(expd.getTime()+(2*60*60*1000));
-            var expires = "expires="+expd.toGMTString();
-            document.cookie=\'disktag=\'+t.disktag_add.value+\'; path=/; \'+expires;
+            document.getElementById("form1").action="?install0&disktag=" + t.disktag_add.value + "&AddDisk=" + t.Drive_ver.value;
+            //var expd = new Date();
+            //expd.setTime(expd.getTime()+(2*60*60*1000));
+            //var expires = "expires="+expd.toGMTString();
+            //document.cookie=\'disktag=\'+t.disktag_add.value+\'; path=/; \'+expires;
             return true;
         }
     </script>';
